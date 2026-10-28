@@ -17,6 +17,7 @@ Your agent can chat in private messages and in groups, the same way it does on D
 - [Configuration](#configuration)
 - [Owner commands in WeChat](#owner-commands-in-wechat)
 - [Media handling](#media-handling)
+- [Pacing and ban risk](#pacing-and-ban-risk)
 - [Reliability: no lost or duplicated messages](#reliability-no-lost-or-duplicated-messages)
 - [Security and privacy](#security-and-privacy)
 - [Known limitations](#known-limitations)
@@ -86,37 +87,83 @@ The plugin is plain Node.js with no runtime dependencies beyond OpenClaw itself.
 
 ## Installation
 
-> One-line installers (`npm`, Homebrew, `curl | sh`) are planned. Until they ship, installation is manual.
+### 1. Install the plugin
 
-### 1. Run the daemon
-
-Build or pull [agent-wechat](https://github.com/thisnick/agent-wechat), following its README, and run it so that its API listens on **loopback only**. For example, publish it as `127.0.0.1:6174:6174`; never use `0.0.0.0`. Log in by scanning the QR code with the bot account, then create an API token for this plugin and save it to a file only you can read:
+Pick one:
 
 ```sh
+# OpenClaw's own installer (recommended)
+openclaw plugins install openclaw-wechat-native
+npm install -g openclaw-wechat-native          # adds the `openclaw-wechat` setup helper
+
+# or the one-line installer (does both, checks prerequisites, no sudo)
+curl -fsSL https://raw.githubusercontent.com/alexdeg92/openclaw-wechat-native/main/install.sh | sh
+
+# or Homebrew (Linuxbrew)
+brew install alexdeg92/tap/openclaw-wechat
+openclaw plugins install openclaw-wechat-native
+```
+
+Check everything with:
+
+```sh
+openclaw-wechat doctor
+```
+
+```
+✔ Node 24.21.0
+✔ OpenClaw 2026.9.8
+✔ Docker
+✔ ffmpeg
+✔ OpenClaw config ~/.openclaw/openclaw.json
+✔ channels.wechat-native-isolated account
+✔ daemon reachable at http://127.0.0.1:6174/
+✔ device name on next login: "Timmy's PC"
+```
+
+<details>
+<summary>From source</summary>
+
+```sh
+git clone https://github.com/alexdeg92/openclaw-wechat-native.git
+cd openclaw-wechat-native
+npm install && npm test
+openclaw plugins install --link .
+```
+</details>
+
+### 2. Run the daemon
+
+Build or pull [agent-wechat](https://github.com/thisnick/agent-wechat), following its README, and run it so that its API listens on **loopback only**. For example, publish it as `127.0.0.1:6174:6174`; never use `0.0.0.0`. Create an API token for this plugin and save it to a file only you can read:
+
+```sh
+install -d -m 700 ~/.openclaw/wechat-native
 install -m 600 /dev/null ~/.openclaw/wechat-native/token
 $EDITOR ~/.openclaw/wechat-native/token   # paste the daemon token, save
 ```
 
 > **Voice notes:** daemon builds up to at least `v1.0.0-beta.13` send voice notes with the wrong format flag, so receivers hear noise. This is [agent-wechat#277](https://github.com/thisnick/agent-wechat/issues/277). Use a build that includes the fix, or apply it yourself: `VoiceFormat=4` (SILK) and `CancelFlag=0` in the voice upload request.
 
-### 2. Install the plugin
+### 3. Log the bot in with the QR code
 
 ```sh
-git clone https://github.com/alexdeg92/openclaw-wechat-native.git
-cd openclaw-wechat-native
-npm install
-npm run build
-npm test          # optional: 170 tests, about 1 minute
+openclaw-wechat login
 ```
 
-### 3. Tell OpenClaw about it
+1. The helper reads your agent's name from OpenClaw (`agents.entries.main.name`) and logs in as **"<agent>'s PC"**, for example **"Timmy's PC"**. That's the name the bot's WeChat shows under *Me → Settings → Account Security → Login Devices*. Use `--name "…"` to pick another name.
+2. If the daemon has saved trust from an earlier login, WeChat may simply ask the bot's phone to **approve** the login. Otherwise a **QR code is drawn in the terminal**, and also saved as a private PNG.
+3. On the **bot's phone**, open WeChat → **+** → **Scan**, scan the code, and tap **Log In**.
+4. The helper prints `✔ Logged in`. The phone then shows a *"Logged in to Linux PC"* bar at the top of the chat list. That's WeChat's standard label for its Linux app, so the bot looks like an ordinary Linux desktop.
 
-Add the plugin path and the channel to `~/.openclaw/openclaw.json`. See [Configuration](#configuration) for every field. **Stop the gateway before you edit the config** (`openclaw daemon stop`), then start it again (`openclaw daemon start`). If you edit while it's running, the live reload may leave the channel stuck.
+The login needs a daemon token with the `login` scope (`--token-file`). The token in your OpenClaw config only needs the read and send scopes.
+
+### 4. Tell OpenClaw about it
+
+Add the channel to `~/.openclaw/openclaw.json`. See [Configuration](#configuration) for every field. **Stop the gateway before you edit the config** (`openclaw daemon stop`), then start it again (`openclaw daemon start`). If you edit while it's running, the live reload may leave the channel stuck.
 
 ```json5
 {
   plugins: {
-    load: { paths: ["/path/to/openclaw-wechat-native"] },
     allow: ["wechat-native-isolated"],
     entries: { "wechat-native-isolated": { enabled: true } }
   },
@@ -171,6 +218,7 @@ All fields live under `channels["wechat-native-isolated"].accounts.<name>`.
 | `groupPolicy` | | `allowlist` (only the groups listed in `groups`) or `disabled`. |
 | `groups` | | Enabled groups, as `{ "<room>@chatroom": { requireMention: true } }`. The bot always needs an @-mention or a quote-reply in a group. |
 | `mediaMaxMb` | | Maximum size of inbound media to download. |
+| `pacing` | | Human-like reply pacing; see [Pacing](#pacing-and-ban-risk). The defaults are `{ minDelayMs: 1200, maxDelayMs: 4000, perCharMs: 20, dailyCap: 400 }`. Set `maxDelayMs: 0` to turn the delay off, or `dailyCap: 0` for no cap. |
 
 **Finding IDs.** Personal IDs look like `wxid_…` or a custom WeChat ID. Group IDs end in `@chatroom`. You can list them from the daemon:
 
@@ -193,6 +241,24 @@ Owners can manage access without touching the server. Changes are written to `jo
 | An enabled group | `@Bot allow @Person` | That person can now message the bot privately. |
 | An enabled group | `@Bot remove @Person` | That person's private messages are ignored again. Owners can't be removed. |
 | Private chat with the bot | `who's allowed` | The bot posts the current list of allowed people and groups. |
+
+### Step by step: add a group
+
+1. Add the bot's WeChat account to the group, as you would any member.
+2. In the group, type `@` and pick the bot from the list, then add `enable this group`:
+   `@Timmy enable this group`
+3. The bot confirms in the group. From now on, anyone in that group can talk to it by **@-mentioning** it or **quote-replying** one of its messages. Other messages in the group are ignored.
+4. To stop: `@Timmy disable this group`.
+
+### Step by step: allow a person to message the bot privately
+
+1. In an enabled group that the person is also in, type `@`, pick the bot, type `allow`, then type `@` again and pick the person:
+   `@Timmy allow @Li Wei`
+2. The bot confirms. The person can now message it privately and get answers.
+3. Check the list at any time by sending `who's allowed` to the bot in your **private** chat.
+4. To undo: `@Timmy remove @Li Wei`.
+
+The person must be picked from the @ list. A typed name isn't enough, because the plugin only trusts the exact ID WeChat attaches to the mention. For someone who isn't in any group with the bot, add their WeChat ID to `allowFrom` in the config instead.
 
 Pick both the bot and the person from WeChat's **@ picker**. The plugin acts on the exact IDs WeChat attaches to the mention, never on typed names. A command has to be the whole message, so ordinary chat like "allow me to explain…" never triggers one. The list is never posted in a group.
 
@@ -235,6 +301,17 @@ In groups, I reply when @-mentioned or quote-replied.
 
 **Tip for persona prompts.** Tell the agent to react to media the way a friend would ("lmao 😂") instead of describing it. Tell it to answer voice with voice when that's natural, and with text when the reply contains links, numbers or lists.
 
+## Pacing and ban risk
+
+WeChat flags accounts that behave like machines. The plugin keeps the bot looking human:
+
+- **A short pause before every message:** 1.2 to 4 seconds, longer for longer replies, with ±20% random jitter. Your model's own thinking time comes on top.
+- **A daily send cap**, 400 by default, as a guard against runaway loops. Past the cap, sends fail cleanly ("failed before send") until midnight UTC.
+- **It only speaks when spoken to:** allow lists, @-mentions in groups, and no unsolicited messages to strangers.
+- **It looks like the official Linux app:** WeChat shows "Logged in to Linux PC", the same as for any WeChat for Linux user. Don't fake another device type; mismatches are what get flagged.
+
+Other things that matter: run it from a **home or office internet connection** rather than a cloud server, use an **established account** rather than a brand-new one, and **avoid frequent re-logins**.
+
 ## Reliability: no lost or duplicated messages
 
 WeChat has no "exactly once" guarantee, so the plugin keeps its own **custody journal**, `journalDir/custody.jsonl`, which only ever grows:
@@ -273,6 +350,7 @@ Report security problems privately through GitHub's "Report a vulnerability" but
 | Voice notes sound like noise | Your daemon has bug [#277](https://github.com/thisnick/agent-wechat/issues/277). See [Installation](#1-run-the-daemon). |
 | A sticker reaches the agent as one blank frame | Install `ffmpeg`. |
 | The channel is stuck after a config edit | Stop the gateway, edit, start it again. Don't edit `openclaw.json` while the gateway is running. |
+| The bot is logged out | Run `openclaw-wechat login`, then approve or scan on the bot's phone. |
 | You want to see what happened | Run `tail -f <journalDir>/diag.log` and `journalctl --user -u openclaw-gateway -f`. |
 
 ## Development
@@ -288,6 +366,8 @@ src/        plugin source (TypeScript entry points plus ES modules)
   coalesce.mjs         image plus caption merging
   inbound-media.mjs    download, verify, transcribe, sticker grids
   outbound-media.mjs   uploads, SILK voice, media sends
+  pacing.mjs           human-like send delay and daily cap
+bin/        openclaw-wechat setup helper (login, doctor)
 test/       node:test suites (unit, real-host end-to-end, crash recovery)
 build/      compiled output (generated by npm run build)
 ```
@@ -295,6 +375,7 @@ build/      compiled output (generated by npm run build)
 ```sh
 npm install
 npm test     # builds, then runs all suites serially
+node scripts/gen-manifest.mjs   # regenerate openclaw.plugin.json after changing the config schema
 ```
 
 The end-to-end tests load the real OpenClaw host from `node_modules/openclaw` against a fake daemon. They never touch a real WeChat account or a running gateway. Set `OPENCLAW_DIST` to test against another OpenClaw build.

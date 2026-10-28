@@ -35,7 +35,7 @@ export function contactsFeatures(account,active,diag){
  // Send already-planned media parts in order; report each accepted physical message (incl. partial voice chunks) first.
  async function deliverPlanned(ctx,owner,a,peerId,plans,collected){
   for(const plan of plans){
-   try{const v=await deliverMediaPart({j:owner.adapter.j,client:owner.client,plan,signal:ctx.signal,...(owner.mediaPoll?{poll:owner.mediaPoll,sleep:async()=>{}}:{}),beforeSend:async()=>{await ctx.onPlatformSendDispatch?.();ctx.assertDirectAdapterHandoff?.();}});
+   try{const v=await deliverMediaPart({j:owner.adapter.j,client:owner.client,plan,signal:ctx.signal,...(owner.mediaPoll?{poll:owner.mediaPoll,sleep:async()=>{}}:{}),beforeSend:async()=>{await owner.adapter.gate?.(0,ctx.signal);await ctx.onPlatformSendDispatch?.();ctx.assertDirectAdapterHandoff?.();}});
     for(const id of v.ids){collected.push({id,kind:v.kind});await ctx.onDeliveryResult?.(partResult(peerId,id,v.kind,collected.length-1));}releaseOwned(plan);
    }catch(error){
     if(error instanceof MediaSendError)for(const id of error.ids??[]){collected.push({id,kind:'voice'});await ctx.onDeliveryResult?.(partResult(peerId,id,'voice',collected.length-1));}

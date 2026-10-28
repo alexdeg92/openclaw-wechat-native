@@ -4,17 +4,64 @@
   "description": "OpenClaw channel plugin for personal WeChat on Linux, via a local agent-wechat daemon: text, images, files, voice notes, stickers, groups and owner access commands.",
   "type": "commonjs",
   "main": "build/plugin.js",
-  "files": ["build/", "openclaw.plugin.json", "README.md", "LICENSE"],
-  "openclaw": { "extensions": ["./build/plugin.js"] },
+  "files": [
+    "build/",
+    "bin/",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "openclaw": {
+    "extensions": [
+      "./build/plugin.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.9.8",
+      "minGatewayVersion": "2026.9.8"
+    },
+    "build": {
+      "openclawVersion": "2026.9.8",
+      "pluginSdkVersion": "2026.9.8"
+    },
+    "install": {
+      "npmSpec": "openclaw-wechat-native",
+      "minHostVersion": ">=2026.9.8"
+    }
+  },
   "scripts": {
     "build": "tsc --strict --allowJs --skipLibCheck --module nodenext --moduleResolution nodenext --target es2022 --rootDir src --outDir build src/host.ts src/plugin.ts",
     "test": "npm run build && node --test --test-concurrency=1 test/*test.mjs",
-    "prepack": "npm run build"
+    "prepack": "npm run build && node scripts/gen-manifest.mjs"
   },
-  "engines": { "node": ">=24.16" },
-  "peerDependencies": { "openclaw": ">=2026.9.8" },
-  "devDependencies": { "openclaw": "2026.9.8", "typescript": "^5.6.0" },
-  "keywords": ["openclaw", "openclaw-plugin", "wechat", "weixin", "channel", "linux"],
+  "engines": {
+    "node": ">=24.16"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.9.8"
+  },
+  "devDependencies": {
+    "openclaw": "2026.9.8",
+    "typescript": "^5.6.0"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "wechat",
+    "weixin",
+    "channel",
+    "linux"
+  ],
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/alexdeg92/openclaw-wechat-native.git" }
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexdeg92/openclaw-wechat-native.git"
+  },
+  "homepage": "https://github.com/alexdeg92/openclaw-wechat-native#readme",
+  "bugs": {
+    "url": "https://github.com/alexdeg92/openclaw-wechat-native/issues"
+  },
+  "author": "Alexandre Sauvé-de Guise",
+  "bin": {
+    "openclaw-wechat": "bin/openclaw-wechat.mjs"
+  }
 }

@@ -4,7 +4,7 @@ import {resolveAccountConfig,groupAllowed} from '../src/policy.mjs';import {Dire
 import built from '../build/plugin.js';import {withInboundOrigin} from '../build/authority.mjs';
 globalThis.fetch=async()=>{throw Error('real network forbidden')};
 const ID='wechat-native-isolated',owner='wxid_owner',peer='wxid_peer',other='wxid_other',room='room@chatroom';
-const raw=()=>({mediaCaptionWindowMs:0,textMediaWindowMs:0,enabled:true,startAfter:'0',daemonAccountId:'daemon',selfId:'wxid_self',allowFrom:[owner,peer],ownerIds:[owner],dmPolicy:'allowlist',groupPolicy:'allowlist',groups:{[room]:{requireMention:true}},baseUrl:'http://127.0.0.1:6174/',token:'synthetic',journalDir:mkdtempSync(tmpdir()+'/p2-journal-')});
+const raw=()=>({pacing:{maxDelayMs:0,dailyCap:0},mediaCaptionWindowMs:0,textMediaWindowMs:0,enabled:true,startAfter:'0',daemonAccountId:'daemon',selfId:'wxid_self',allowFrom:[owner,peer],ownerIds:[owner],dmPolicy:'allowlist',groupPolicy:'allowlist',groups:{[room]:{requireMention:true}},baseUrl:'http://127.0.0.1:6174/',token:'synthetic',journalDir:mkdtempSync(tmpdir()+'/p2-journal-')});
 const cfgFor=a=>({channels:{[ID]:{accounts:{local:a}}}});const account=()=>resolveAccountConfig(cfgFor(raw()),'local');
 const event=(id,thread=peer)=>({cursor:id,kind:'message.committed',data:{origin:'live',direction:'incoming',messageId:id,threadId:thread}});
 const msg=(id,thread=peer,sender=thread,mentions)=>({id,accountId:'daemon',threadId:thread,senderId:sender,type:1,direction:'incoming',body:'synthetic secret text',media:[],...(mentions?{mentions}:{})});

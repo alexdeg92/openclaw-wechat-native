@@ -9,6 +9,7 @@ import {prepareMediaEvent,MediaJobs} from './host-media.js';
 import {InboundCoalescer,mergePrepared} from './coalesce.mjs';
 import {appendFileSync} from 'node:fs';
 import {resolveAccountConfig,accountSchema,conversationAllowed,isRoom,groupAllowed} from './policy.mjs';
+import {makePacer} from './pacing.mjs';
 import {readAccess,mergeAccess,changeAccess,readNames} from './access.mjs';
 import {decideAccessCommand,isOwnerEnable} from './access-command.mjs';
 import {withQuoteMention} from './quote-mention.mjs';
@@ -18,7 +19,7 @@ const ID='wechat-native-isolated';
 const ACTIVE=Symbol.for('openclaw.wechat-native-isolated.active');
 function diag(dir:string|undefined,event:string,detail:Record<string,unknown>={}){if(!dir)return;try{appendFileSync(dir+'/diag.log',JSON.stringify({at:new Date().toISOString(),event,...detail})+'\n');}catch{}}
 async function tokenFor(a:Account,cfg:OpenClawConfig):Promise<string> {if(typeof a.token==='string')return a.token;const r=a.token;if(r?.source==='env'&&r.provider==='default'&&/^WX_NATIVE_ISOLATED_[A-Z0-9_]+$/.test(r.id)){const value=process.env[r.id];if(!value)throw Error('token SecretRef unresolved');return value;}if(r?.source!=='file'||r.provider!=='wechat-native-isolated'||r.id!=='value')throw Error('scoped SecretRef required');const values=await resolveSecretRefValues([r],{config:cfg});if(values.size!==1)throw Error('token SecretRef unresolved');const value=values.values().next().value;if(typeof value!=='string'||!value)throw Error('token SecretRef unresolved');return value;}
-type Account={accountId:string;daemonAccountId:string;selfId:string;allowFrom:string[];baseUrl:string;token:string|{source:'env';provider:'default';id:string}|{source:'file';provider:'wechat-native-isolated';id:'value'};startAfter:string;journalDir:string;verifiedPeer?:string;enabled:boolean;ownerIds:string[];dmPolicy:'allowlist'|'disabled';groupPolicy:'allowlist'|'disabled';groups:Record<string,{requireMention?:true}>;legacyPolicy:boolean;mediaCaptionWindowMs:number;textMediaWindowMs:number;mediaMaxMb:number};
+type Account={accountId:string;pacing?:{minDelayMs?:number;maxDelayMs?:number;perCharMs?:number;dailyCap?:number};daemonAccountId:string;selfId:string;allowFrom:string[];baseUrl:string;token:string|{source:'env';provider:'default';id:string}|{source:'file';provider:'wechat-native-isolated';id:'value'};startAfter:string;journalDir:string;verifiedPeer?:string;enabled:boolean;ownerIds:string[];dmPolicy:'allowlist'|'disabled';groupPolicy:'allowlist'|'disabled';groups:Record<string,{requireMention?:true}>;legacyPolicy:boolean;mediaCaptionWindowMs:number;textMediaWindowMs:number;mediaMaxMb:number};
 // Owner access overlay (access.json beside the journal) is merged on every resolve, so changes need no restart.
 function account(cfg:OpenClawConfig,id?:string|null):Account {const a:any=resolveAccountConfig(cfg,id);return (typeof a.journalDir==='string'?mergeAccess(a,readAccess(a.journalDir)):a) as Account;}
 export function makePlugin(runtime:PluginRuntime,fetcher:typeof fetch=fetch):ChannelPlugin<Account>{
@@ -26,7 +27,7 @@ export function makePlugin(runtime:PluginRuntime,fetcher:typeof fetch=fetch):Cha
  const active:Map<string,{adapter:any;client:any;journalDir:string;directory:any;account:Account}>=((globalThis as any)[ACTIVE]??=new Map());
  const instance=Math.random().toString(36).slice(2,8);
  const contacts=contactsFeatures(account,active,diag);
- const plugin:ChannelPlugin<Account>={id:ID,meta:{id:ID,label:'WeChat native isolated',selectionLabel:'WeChat native isolated',docsPath:'/channels/wechat-native-isolated',blurb:'Allowlisted contacts and mentioned groups'},capabilities:{chatTypes:['direct','group'],media:true,
+ const plugin:ChannelPlugin<Account>={id:ID,meta:{id:ID,label:'WeChat',selectionLabel:'WeChat (native Linux)',docsPath:'/channels/wechat-native-isolated',blurb:'Allowlisted contacts and mentioned groups'},capabilities:{chatTypes:['direct','group'],media:true,
  // Native voice notes are supported through the daemon's audio transcoding and chunk receipts.
  tts:{voice:{synthesisTarget:'voice-note',transcodesAudio:true}}},
  configSchema:{schema:{type:'object',additionalProperties:false,required:['accounts'],properties:{accounts:{type:'object',minProperties:1,additionalProperties:accountSchema}}},uiHints:{'accounts.*.token':{sensitive:true}}},
@@ -40,6 +41,7 @@ export function makePlugin(runtime:PluginRuntime,fetcher:typeof fetch=fetch):Cha
   const a=account(ctx.cfg,ctx.accountId);if(active.has(a.accountId))throw Error('single owner required');
   const stop=new AbortController(),signal=AbortSignal.any([ctx.abortSignal,stop.signal]);
   const journal=new Journal(a.journalDir),adapter=new Adapter(a,journal),client=daemonClient(a.baseUrl,await tokenFor(a,ctx.cfg),fetcher,signal),mediaJobs=new MediaJobs(a.journalDir);
+  (adapter as any).gate=makePacer(a.journalDir,a.pacing);
   const directory=createDirectory(a,client);active.set(a.accountId,{adapter,client,journalDir:a.journalDir,directory,account:a});
   // The core keeps its own copy of the account; refresh its lists whenever an owner command changes access.
   const syncAccess=(x:any)=>{(adapter as any).c.allowFrom=[...x.allowFrom];(adapter as any).c.groups={...x.groups};};
@@ -101,4 +103,4 @@ export function makePlugin(runtime:PluginRuntime,fetcher:typeof fetch=fetch):Cha
   }finally{active.delete(a.accountId);journal.close();mediaJobs.close();ctx.setStatus({accountId:a.accountId,running:false});}
  }}};return plugin;
 }
-export default {id:ID,name:'WeChat native isolated',description:'Original contact and group channel',register(api:OpenClawPluginApi){api.registerChannel({plugin:makePlugin(api.runtime)});}};
+export default {id:ID,name:'WeChat (native Linux)',description:'Personal WeChat on Linux through a local agent-wechat daemon',register(api:OpenClawPluginApi){api.registerChannel({plugin:makePlugin(api.runtime)});}};
