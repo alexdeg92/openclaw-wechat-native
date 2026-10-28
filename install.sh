@@ -35,8 +35,8 @@ openclaw plugins install "$PKG" || die "openclaw plugins install failed."
 ok "plugin installed (takes effect at the next gateway start)"
 
 say "Installing the openclaw-wechat helper…"
-npm install -g --no-audit --no-fund "$PKG" >/dev/null 2>&1 \
-  || npm install --prefix "$HOME/.local" -g --no-audit --no-fund "$PKG" >/dev/null 2>&1 \
+npm install -g --legacy-peer-deps --no-audit --no-fund "$PKG" >/dev/null 2>&1 \
+  || npm install --prefix "$HOME/.local" -g --legacy-peer-deps --no-audit --no-fund "$PKG" >/dev/null 2>&1 \
   || die "could not install the helper with npm."
 if command -v openclaw-wechat >/dev/null 2>&1; then ok "openclaw-wechat on PATH"
 else
