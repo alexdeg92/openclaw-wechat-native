@@ -1,0 +1,20 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {mkdtempSync,writeFileSync,mkdirSync} from 'node:fs';import {tmpdir} from 'node:os';import {resolve} from 'node:path';
+const root=resolve(import.meta.dirname,'..'),state=mkdtempSync(tmpdir()+'/wechat-authority-');process.env.OPENCLAW_STATE_DIR=state;process.env.OPENCLAW_CONFIG_PATH=state+'/absent.json';process.env.OPENCLAW_BUNDLED_PLUGINS_DIR=state+'/none';
+test('external registration cannot mint authoritative admission; allowlist and invalid handoffs stay unknown',async()=>{const shim=state+'/fixture';mkdirSync(shim);writeFileSync(shim+'/package.json',JSON.stringify({name:'wechat-native-isolated',version:'0.0.0',type:'module',openclaw:{extensions:['./entry.mjs']}}));writeFileSync(shim+'/openclaw.plugin.json',JSON.stringify({id:'wechat-native-isolated',channels:['wechat-native-isolated'],configSchema:{type:'object',properties:{},additionalProperties:false}}));writeFileSync(shim+'/entry.mjs',"import p from '"+root+"/build/plugin.js';export default {...p.default,register(api){globalThis.__wechatTestRuntime=api.runtime;p.default.register(api)}};");
+const {t:acquire}=await import((process.env.OPENCLAW_DIST??new URL('../node_modules/openclaw/dist/',import.meta.url).pathname)+'loader-runtime-load-DCwhg2IV.mjs');const lease=await acquire({config:{plugins:{enabled:true,allow:['wechat-native-isolated'],load:{paths:[shim]},entries:{'wechat-native-isolated':{enabled:true}}}},workspaceDir:state,env:{...process.env},onlyPluginIds:['wechat-native-isolated'],allowProcessHomeSessionCatalogs:false,logger:{info(){},warn(){},error(){},debug(){}}});try{assert.equal(lease.registry.plugins[0].status,'loaded');const runtime=globalThis.__wechatTestRuntime;
+ const {defineStableChannelIngressIdentity}=await import('openclaw/plugin-sdk/channel-ingress-runtime');
+ const identity=defineStableChannelIngressIdentity({key:'wechat-test',normalize:v=>v,sensitivity:'pii'});
+ const request={channelId:'wechat-native-isolated',accountId:'local',identity,subject:{stableId:'PeerX'},conversation:{kind:'direct',id:'PeerX'},contextBinding:{agentId:'main',sessionKey:'agent:main:wechat:test',messageId:'M',inboundEventKind:'user_request',nativeChannelId:'PeerX'},event:{kind:'message',authMode:'inbound',mayPair:false},policy:{dmPolicy:'allowlist',groupPolicy:'disabled'},allowFrom:['PeerX'],readStoreAllowFrom:async()=>[]};
+ const denied=await runtime.channel.inbound.ingress.resolve({...request,allowFrom:['peerx']});assert.notEqual(denied.ingress.admission,'dispatch');
+ const grant=await runtime.channel.inbound.ingress.resolve(request);assert.equal(grant.ingress.admission,'dispatch');
+ const facts={channel:'wechat-native-isolated',accountId:'local',messageId:'M',from:'PeerX',sender:{id:'PeerX'},conversation:{kind:'direct',id:'PeerX',nativeChannelId:'PeerX'},route:{agentId:'main',routeSessionKey:'agent:main:wechat:test'},reply:{to:'PeerX'},message:{body:'challenge',rawBody:'challenge',inboundEventKind:'user_request'},channelIngress:grant};
+ const {c:readEvidence,i:consume}=await import((process.env.OPENCLAW_DIST??new URL('../node_modules/openclaw/dist/',import.meta.url).pathname)+'admission-evidence-DswNfzJ7.mjs');
+ const stateOf=ctx=>consume(readEvidence(ctx)).ingressState;
+ assert.equal(stateOf(runtime.channel.inbound.buildContext({...facts,messageId:'tampered'})),'unknown');
+ assert.equal(stateOf(runtime.channel.inbound.buildContext(facts)),'unknown'); // failed handoff also consumes grant
+ const fresh=await runtime.channel.inbound.ingress.resolve(request);
+ const context=runtime.channel.inbound.buildContext({...facts,channelIngress:fresh});assert.equal(context.MessageSid,'M');assert.equal(stateOf(context),'unknown');
+ assert.equal(stateOf(runtime.channel.inbound.buildContext({...facts,channelIngress:fresh})),'unknown');
+ const last=await runtime.channel.inbound.ingress.resolve(request);await lease.release();
+ assert.equal(stateOf(runtime.channel.inbound.buildContext({...facts,channelIngress:last})),'unknown');
+ }finally{await lease.release();}});

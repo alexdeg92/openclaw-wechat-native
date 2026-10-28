@@ -1,0 +1,20 @@
+{
+  "name": "openclaw-wechat-native",
+  "version": "0.1.0",
+  "description": "OpenClaw channel plugin for personal WeChat on Linux, via a local agent-wechat daemon: text, images, files, voice notes, stickers, groups and owner access commands.",
+  "type": "commonjs",
+  "main": "build/plugin.js",
+  "files": ["build/", "openclaw.plugin.json", "README.md", "LICENSE"],
+  "openclaw": { "extensions": ["./build/plugin.js"] },
+  "scripts": {
+    "build": "tsc --strict --allowJs --skipLibCheck --module nodenext --moduleResolution nodenext --target es2022 --rootDir src --outDir build src/host.ts src/plugin.ts",
+    "test": "npm run build && node --test --test-concurrency=1 test/*test.mjs",
+    "prepack": "npm run build"
+  },
+  "engines": { "node": ">=22" },
+  "peerDependencies": { "openclaw": ">=2026.9.8" },
+  "devDependencies": { "openclaw": "2026.9.8", "typescript": "^5.6.0" },
+  "keywords": ["openclaw", "openclaw-plugin", "wechat", "weixin", "channel", "linux"],
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/alexdeg92/openclaw-wechat-native.git" }
+}

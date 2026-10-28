@@ -1,0 +1,10 @@
+node_modules/
+build/
+test/fixtures/*/
+!test/fixtures/*.gif
+.test-tmp/
+*.log
+*.bak*
+*.orig
+.env
+*.token

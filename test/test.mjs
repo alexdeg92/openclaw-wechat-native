@@ -1,0 +1,13 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync} from 'node:fs';
+import {Adapter,Journal,loopbackClient,opaque} from '../src/core.mjs';
+const root=new URL('./fixtures/',import.meta.url).pathname;
+const c={accountId:'local',daemonAccountId:'native',selfId:'Self',allowFrom:['PeerX']};
+const e={accountId:'native',peerId:'PeerX',senderId:'PeerX',messageId:'M1',cursor:'C1',text:'mock',kind:'direct-text',outgoing:false};
+function setup(){const dir=mkdtempSync(root);const j=new Journal(dir);return {dir,j,a:new Adapter(c,j)};}
+test('case preserved; allowlist and self echoes; restart dedup/cursor',async()=>{const {dir,j,a}=setup();let count=0;const cb=async()=>count++;await a.receive(e,cb);await a.receive({...e,peerId:'peerx',senderId:'peerx',messageId:'M2'},cb);await a.receive({...e,outgoing:true,messageId:'M3'},cb);await a.receive({...e,senderId:'Self',messageId:'M4'},cb);j.close();const jj=new Journal(dir);await new Adapter(c,jj).receive(e,cb);assert.equal(count,1);assert.equal(new Adapter(c,jj).cursor(),'C1');assert.equal(opaque('PeerX'),'PeerX');jj.close();});
+test('wrong account fails closed',async()=>{const {a,j}=setup();await assert.rejects(a.receive({...e,accountId:'other'},async()=>{}));assert.equal(a.cursor(),undefined);j.close();});
+test('uncertain host custody quarantines replay and cursor',async()=>{const {a,j}=setup();await assert.rejects(a.receive(e,async()=>{throw Error('crash')}));assert.equal(a.cursor(),undefined);await assert.rejects(a.receive(e,async()=>assert.fail()));j.close();});
+test('uncertain send reconciles without second POST, payload conflict denied',async()=>{const {a,j}=setup();let posts=0,gets=0;const t={postSend:async()=>{posts++;throw Error('lost response')},findSend:async()=>{gets++;return {state:'needs_review'}}};const payload={peerId:'PeerX',logicalId:'reply1',text:'mock'};const r=await a.send(payload,t);assert.equal(r.state,'reconciliation-required');await a.send(payload,t);await a.reconcile(r.key,t);assert.equal(posts,1);assert.equal(gets,1);await assert.rejects(a.send({...payload,text:'changed'},t));j.close();});
+test('loopback auth path encoding redirects blocked, mock fetch only',async()=>{assert.throws(()=>loopbackClient('http://localhost:1/','token',()=>{}));let seen;const t=loopbackClient('http://127.0.0.1:1/','synthetic',async(u,i)=>{seen={u,i};return {ok:true,json:async()=>({state:'mock'})}});await t.postSend('Case/ID',{threadId:'PeerX',text:'mock'},'key');assert.match(seen.u.pathname,/Case%2FID/);assert.equal(seen.i.redirect,'error');assert.equal(seen.i.headers.Authorization,'Bearer synthetic');});
