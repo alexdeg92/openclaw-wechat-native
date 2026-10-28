@@ -77,7 +77,7 @@ The plugin is plain Node.js with no runtime dependencies beyond OpenClaw itself.
 ## Requirements
 
 - **Linux** on x86-64. Tested on Ubuntu 24.04.
-- **Node.js 22 or newer**
+- **Node.js 24.16 or newer** (required by OpenClaw)
 - **OpenClaw 2026.9.8 or newer**, with the gateway running as a service.
 - **Docker**, to run the daemon.
 - **ffmpeg**, to turn animated stickers into frame grids. Optional; without it, stickers fall back to their first frame.
